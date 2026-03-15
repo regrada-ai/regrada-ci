@@ -1,0 +1,83 @@
+name: "Regrada - AI Regression Tests"
+description: "Run Regrada in GitHub Actions without publishing the CLI source"
+author: "Regrada"
+
+branding:
+  icon: "shield"
+  color: "blue"
+
+inputs:
+  version:
+    description: "Regrada version to install, or latest"
+    required: false
+    default: "latest"
+  base-url:
+    description: "Base URL hosting versioned Regrada release artifacts"
+    required: false
+    default: "https://regrada.com/releases"
+  config:
+    description: "Path to regrada.yml or regrada.yaml"
+    required: false
+    default: "regrada.yml"
+  comment-on-pr:
+    description: "Post results as a PR comment"
+    required: false
+    default: "true"
+  working-directory:
+    description: "Working directory for running tests"
+    required: false
+    default: "."
+
+outputs:
+  total:
+    description: "Total number of tests"
+    value: ${{ steps.run.outputs.total }}
+  passed:
+    description: "Number of passed tests"
+    value: ${{ steps.run.outputs.passed }}
+  warned:
+    description: "Number of warned tests"
+    value: ${{ steps.run.outputs.warned }}
+  failed:
+    description: "Number of failed tests"
+    value: ${{ steps.run.outputs.failed }}
+  result:
+    description: "Overall result: success, warning, or failure"
+    value: ${{ steps.run.outputs.result }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Install Regrada
+      shell: bash
+      run: |
+        bash "${{ github.action_path }}/action/install-regrada.sh" \
+          "${{ inputs.version }}" \
+          "${{ inputs.base-url }}"
+
+    - name: Run Evaluations
+      id: run
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        bash "${{ github.action_path }}/action/run-evaluations.sh" \
+          "${{ inputs.config }}"
+
+    - name: Comment on PR
+      if: github.event_name == 'pull_request' && inputs.comment-on-pr == 'true'
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const commentScript = require('${{ github.action_path }}/action/comment-on-pr.js');
+          await commentScript({
+            github,
+            context,
+            workdir: '${{ inputs.working-directory }}'
+          });
+
+    - name: Check Result
+      if: steps.run.outputs.exit_code != '0'
+      shell: bash
+      run: |
+        echo "::error::Regrada detected policy violations"
+        exit 1
